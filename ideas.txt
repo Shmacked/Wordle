@@ -1,0 +1,15 @@
+maybe include weights for common word endings
+maybe include 2d array of weights for liklihood of letters appearing next to each other
+
+It appears that there is a math "limit". As you approach the correct word, the weights tend to a value - look at the below:
+weighted_dictionary = game.dictionary.copy()
+# a guess looks like
+word = "kheda"
+weight = game.dictionary[game.dictionary[0] == word].reset_index(drop=True)["weights"][0]
+game.browser_user_guess(word)
+missed_letters = "kh".upper()
+# get the average of the missed letters, then half it for a +/- delta
+delta = (sum([float(game._dist.loc[e]["percent"][:-1]) for e in missed_letters]) / len(missed_letters)) / 2
+weighted_dictionary = weighted_dictionary[(weighted_dictionary["weights"] < weight + delta) & (weighted_dictionary["weights"] > weight - delta)]
+weighted_dictionary = weighted_dictionary[weighted_dictionary[0].isin(game.dictionary[0])].reset_index(drop=True)
+
