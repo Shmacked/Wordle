@@ -1,150 +1,89 @@
-import string
-from find import *
 import pandas as pd
 import random
 
+from functools import reduce # Valid in Python 2.6+, required in Python 3
+import operator
 
-with open(r"./wordle_words.txt", "r") as f:
-    GAME_WORDS = [e.strip("\n\t").lower() for e in f.readlines()]
-GAME_WORD = "tepid"
+from find import create_dictionary
+
+WORD = "duvet"
 
 
-# Main class
 class Wordle:
-    def __init__(self, dictionary=[], bot=True, print_statements=False, play=True):
-        # _guess_count may be unnecessary because we can perform len() on history
-        self._guess_count = 0
+    def __init__(self, dictionary=[], print_statements=True, operation=sum):
+        self.print_statements = print_statements
+
+        self.guesses = 0
         self.history = []
-        self._game_status = "active" if play else "new"
-
-        self._all_letters = list(string.ascii_lowercase)
-        self._yellow_letters = {}
-        self._red_letters = []
-        self._word_template = "_____"
-
-        self._dist = pd.read_csv("./letter_distribution.txt", sep="\t")
-
-        self.dictionary = pd.concat([create_dictionary(e) for e in dictionary]).drop_duplicates().reset_index(drop=True)
-        if self.dictionary.size == 0:
-            self.dictionary = None
+        self._dist = pd.read_csv("./letter_distribution.txt", sep="\t", index_col="letter")
 
         if len(dictionary) > 0:
-            # the main loop for the ai
-            while self._guess_count <= 6 and self._game_status == "active" and bot:
-                self.guess()
+            self.dictionary = pd.concat([create_dictionary(e) for e in dictionary]).drop_duplicates().reset_index(drop=True)
+        else:
+            self.dictionary = pd.DataFrame()
 
-    # algorithm to determine best guess - returns a str
-    def _calc_guess(self) -> str:
-        if self._guess_count == 0:
+        if self.dictionary.size == 0:
+            self.dictionary = None
+        else:
+            self.dictionary["weights"] = self.dictionary[0].apply(lambda x: round(operation([float(self._dist.loc[e.upper()]["percent"][:-1]) / x.count(e) if e.upper() in self._dist.index else 1 / x.count(e) for e in set(x)])))
+
+    def random_word(self):
+        return "adieu" if self.guesses == 0 else (self.dictionary[0][random.randint(0, len(self.dictionary) - 1)] if len(self.dictionary) > 0 else "")
+
+    def weighted_word(self):
+        if self.guesses == 0:
             return "adieu"
 
-        list_combos = combos(self._word_template, self._all_letters, dictionary=self.dictionary)
+        a = self.dictionary[self.dictionary[0].str.len() > 0]
+        a = a.sort_values(by=["weights"], ascending=False)
 
-        def _calc_guess_sort_function(word):
-            # dist_table = self._dist[self._dist["letter"].str.contains("|".join(set(word.upper())))]
-            # dist = sum([round(word.count(e.lower()) * float(a["percent"][a.index[0]][:-1]), 2) for e in dist_table["letter"] if (a:=dist_table[dist_table["letter"] == e]) is a])
-            # return dist
-            green = sum([1 for a, b in zip(word, self._word_template) if a == b])
-            yellow = sum([sum([1 / (len(word) - len(v) if len(word) - len(v) > 0 else 1) * (1 / word.count(k) if word.count(k) > 0 else 1) for e in v if word[e] != k]) for k, v in self._yellow_letters.items()])
-            red = sum([0 if e in self._all_letters else 1 for e in self._word_template if e.isalpha()])
-            return 0 if red > 0 else (green + yellow)
+        if len(a) == 0:
+            return ""
 
-        word = sorted(list_combos, key=_calc_guess_sort_function, reverse=True)
-        print(word[:10], self.dictionary[:10])
-        return word[0]
+        a = a[a["weights"] == a["weights"][0]].reset_index(drop=True)
 
-    # algorithm to make the guess - returns None
-    def guess(self) -> None:
-        if self._guess_count >= 6 or self._game_status != "active":
-            self._game_status = "game over"
-            return None
+        if self.print_statements:
+            print([(a[0][i], a["weights"][i]) for i in range(len(a[:3]))])
 
-        word = self._calc_guess()
-        self._guess_count += 1
-        self.history.append(word)
-        self._game_status = "game over" if GAME_WORD.lower() == self._word_template else self._game_status
-        # update the template to be the letters in the correct known spots
-        self._word_template = "".join([a if a == b else "_" for a, b in zip(GAME_WORD.lower(), word)])
-        # remove any letters used that are not in the GAME_WORD from self._all_letters
-        # and add letters to _yellow_letters if they aren't in the right position
+        return a[0][random.randint(0, len(a) - 1)]
+
+    def purge(self, word):
+        a = self.dictionary[self.dictionary[0].str.len() == len(word)]
         for i in range(len(word)):
-            a = word[i]
-            if a != GAME_WORD.lower()[i]:
-                if a not in GAME_WORD.lower():
-                    self._all_letters.remove(a)
-                    self._red_letters.append(a)
-                else:
-                    if a in self._yellow_letters:
-                        self._yellow_letters[a].append(i)
-                    else:
-                        self._yellow_letters[a] = [i]
-        # update the dictionary to only contain words with the remaining letters and letters already in the right spot
-        self.dictionary = self.dictionary[self.dictionary[0].str.contains("|".join(self._all_letters))]
-        self.dictionary = self.dictionary[~self.dictionary[0].str.contains("|".join(self._red_letters))]
-        for i in range(len(self._word_template)):
-            letter = self._word_template[i]
-            if letter.isalpha():
-                self.dictionary = self.dictionary[self.dictionary[0].str[i] == letter]
-        # update the dictionary to only contain words where the yellow letters haven't been used
-        for letter in self._yellow_letters:
-            for i in self._yellow_letters[letter]:
-                self.dictionary = self.dictionary[self.dictionary[0].str[i] != letter]
-        self.dictionary = self.dictionary.reset_index(drop=True)
+            if word[i] == WORD[i]:
+                a = a[a[0].str[i] == word[i]]
+            elif word[i] in WORD:
+                a = a[(a[0].str.contains(word[i])) & (a[0].str[i] != word[i])]
+            else:
+                a = a[~a[0].str.contains(word[i])]
+        return a.reset_index(drop=True)
 
-        return None
+    def guess(self):
+        self.dictionary = self.purge((w := self.weighted_word()))
+        self.guesses += 1
+        self.history.append(w)
+        if self.print_statements:
+            print(f"Guess {self.guesses} is {w}.")
+        return w
 
 
-
-
-
-# Exceptions
-
-
-class WordleException(Exception):
-    def __init__(self, message):
-        self.message = message
-
-    def __str__(self):
-        return self.message
-
-
-class WordGenerationException(WordleException):
-    def __init__(self):
-        super().__init__("Could not generate any words.")
-
-
-class WordLengthException(WordleException):
-    def __init__(self):
-        super().__init__("Word length is not the right size.")
-
-
-class GameOverException(WordleException):
-    def __init__(self):
-        super().__init__("Game is over. Can not continue with operation.")
-
-
-class GuessLengthException(WordleException):
-    def __init__(self):
-        super().__init__("Guess counter does not fall within intended range.")
+def my_operation(x):
+    return reduce(operator.mul, x, 1)
 
 
 if __name__ == "__main__":
-    for e in GAME_WORDS:
-        print(f"NEW GAME - {e.upper()}")
-        GAME_WORD = e.lower()
-        game = Wordle(dictionary=["./dictionaries/dictionary.txt",
-                              "./dictionaries/all_words_question_mark.txt",
-                              #"./dictionaries/five-letter-words_sgb-words.txt",
-                            ])
-        print(f"GAME OVER - {game._game_status.upper()} with {len(game.history)} guesses.\n")
+    game = Wordle(dictionary=["./dictionaries/all_words_question_mark.txt",
+                              "./dictionaries/five-letter-words_sgb-words.txt",
+                              "./dictionaries/english3.txt",
+                              "./dictionaries/more_words.txt",
+                              #"./dictionaries/Oxford English Dictionary Words.txt",
+                              "./dictionaries/usa.txt",
+                            ], operation=my_operation)
+    while True:
+        word = game.guess()
 
-    # print(f"NEW GAME - {GAME_WORD.upper()}")
-    # game = Wordle(dictionary=["./dictionaries/dictionary.txt",
-    #                           "./dictionaries/all_words_question_mark.txt",
-    #                           # "./dictionaries/five-letter-words_sgb-words.txt",
-    #                           ])
-    # print(f"GAME OVER - {game._game_status.upper()} with {len(game.history)} guesses.\n")
+        if not (word != WORD and len(game.dictionary) > 0):
+            break
 
-# the first dictionary (dictionary.txt) has a lot of trash words
-# the second dicionary (all_words_question_mark.txt) lacks (at least) inane.
-# the third dicionary (five-letter-words_sgb-words.txt) lacks (at least) inane.
+    print(f"Took {game.guesses} guesses to guess {word} && {WORD}.")
+    print(game.history)
