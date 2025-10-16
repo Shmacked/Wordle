@@ -25,9 +25,50 @@ import string
 from functools import reduce
 import operator
 
-
+# dictionary: list of strings to files to use as dictionaries
+# print_statements: toggles print statements
+# operation: what function to use to give weights to the words
+# browser_game: if the game is meant to be played by selenium
+#     word: the word that is being guessed
+# starting_guess_word: the word that the bot uses first
+# save_picture: saves the game output to an image locally
+# debug: turns on debug logging
+# dist_file: the letter distribution weights
+# word_delta: the variance between the max score and the lowest score
 class Wordle:
-    def __init__(self, dictionary=[], print_statements=True, operation=sum, browser_game=True, word="adieu", starting_guess_word="adieu", save_picture=True, debug=False, dist_file=None, word_delta=5):
+    def __init__(
+        self,
+        dictionary=None,
+        print_statements=None,
+        operation=None,
+        browser_game=None,
+        word=None,
+        starting_guess_word=None,
+        save_picture=None,
+        debug=None,
+        dist_file=None,
+        word_delta=None
+    ):
+    
+        if dictionary is None:
+            dictionary = []
+        if print_statements is None:
+            print_statements = True
+        if operation is None:
+            operation = sum
+        if browser_game is None:
+            browser_game = True
+        if word is None:
+            word = "adieu"
+        if starting_guess_word is None:
+            starting_guess_word = "adieu"
+        if save_picture is None:
+            save_picture = True
+        if debug is None:
+            debug = False
+        if word_delta is None:
+            word_delta = 5
+        
         self.print_statements = print_statements
         self.debug = debug
         self.save_picture = save_picture
@@ -105,6 +146,8 @@ class Wordle:
         if self.browser_game:
             self.driver.close()
 
+    # This is to build a dictionary over time of all the possible words supported in wordle.
+    # Under Dev...
     @staticmethod
     def build_dictionary_from_wordle_website(out_filename, print_statements=True, num_of_letters=5):
         if not Path(out_filename).parent.exists():
@@ -156,6 +199,7 @@ class Wordle:
             print("Finished generating dictionary from wordle website.")
         return words
 
+    # creates a data frame from a file of words to be used as a "dictionary"
     @staticmethod
     def create_dictionary(dictionary):
         df = pd.read_csv(dictionary, header=None)
@@ -163,9 +207,15 @@ class Wordle:
         df[0] = df[0].str.lower()
         return df
 
-    def random_word(self):
-        return "adieu" if self.guesses == 0 else (self.dictionary[0][random.randint(0, len(self.dictionary) - 1)] if len(self.dictionary) > 0 else "")
+    # picks a random word
+    def random_word(self, random=None):
+        if random is None:
+            random = self.starting_guess_word
 
+        # I didn't want it picking a really stupid word on the first guess, unless you wanted it too
+        return random if self.guesses == 0 else (self.dictionary[0][random.randint(0, len(self.dictionary) - 1)] if len(self.dictionary) > 0 else "")
+
+    # picks the weighted average word
     def avg_weighted_word(self):
         if self.guesses == 0 and self.starting_guess_word is not None:
             return self.starting_guess_word
@@ -181,6 +231,7 @@ class Wordle:
 
         return a[0].iloc[random.randint(0, len(a) - 1)]
 
+    # picks a weighted word
     def weighted_word(self):
         if self.guesses == 0 and self.starting_guess_word is not None:
             return self.starting_guess_word
@@ -204,6 +255,7 @@ class Wordle:
 
         return a[0].iloc[random.randint(0, len(a) - 1)]
 
+    # purge the dictionary of words that the true word can't be
     def purge(self, word):
         a = self.dictionary[self.dictionary[0].str.len() == len(word)]
         for i in range(len(word)):
@@ -217,6 +269,7 @@ class Wordle:
         weight = weight.iloc[0] if len(weight) > 0 else 0
         return a.reset_index(drop=True), weight
 
+    # make a guess
     def guess(self):
         self.dictionary, weight = self.purge((w := self.avg_weighted_word()))
         self.guesses += 1
@@ -225,6 +278,7 @@ class Wordle:
             print(f"Guess {self.guesses} is {w} ({weight}) with {len(self.dictionary)} options remaining out of {self.dictionary_length}.")
         return w
 
+    # selenium's way of purgin a word - "purge" should probably be used here for DRY 
     def browser_purge(self, word, results):
         a = self.dictionary[self.dictionary[0].str.len() == len(word)]
         absent_locations = set()
@@ -267,6 +321,7 @@ class Wordle:
 
         return a.reset_index(drop=True)
 
+    # guess for selenium - guess could probably be used here for DRY
     def browser_user_guess(self, word):
         if len(self.dictionary[self.dictionary[0] == word]) == 0:
             if self.print_statements:
@@ -278,6 +333,7 @@ class Wordle:
             print(f"{word}'s weight is {self.dictionary[self.dictionary[0] == word]['weights'].iloc[0]}.")
         return self.browser_guess(word=word)
 
+    # guess for selenium - guess could probably be used here for DRY
     def browser_guess(self, word=None):
         if word is None:
             if self.guesses == 0:
@@ -335,6 +391,7 @@ class Wordle:
 
         return w
 
+    # end the game
     def browser_game_over(self) -> bool:
         if len(self.history) >= 6:
             return True
@@ -354,6 +411,7 @@ class Wordle:
 
         return False
 
+    # determines if the browser was a win or loss
     def browser_game_score(self):
         if len(self.history) == 0:
             return "tbd"
@@ -363,6 +421,7 @@ class Wordle:
             return "win" if self.guesses <= 6 and results == 5 else "lose"
         return "tbd"
 
+    # have to wait for the tiles to flip over in game, so this waits for them to do that then checks.
     async def check(self, elem, max_wait=10):
         s = dt.now()
         while True:
@@ -373,6 +432,7 @@ class Wordle:
         l = [e.get_attribute("data-state") for e in elem.find_elements(By.CSS_SELECTOR, "div[class*=Tile-module_tile]")]
         return l if sum([1 for e in l if e == 'tbd']) == 0 else ["tbd"] * 5
 
+    # start the game
     def play(self):
         if self.browser_game:
             if self.print_statements:
@@ -431,6 +491,7 @@ class Wordle:
             print(game.history)
 
 
+# custom funtion for assigning weights to words
 def my_operation(x):
     return reduce(operator.mul, x, 1)
 
