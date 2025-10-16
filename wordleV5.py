@@ -11,6 +11,9 @@ from math import perm
 # selenium imports
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 
 from datetime import datetime as dt
@@ -377,19 +380,42 @@ class Wordle:
             while not self.browser_game_over():
                 word = self.browser_guess()
             if self.print_statements:
-                print("Game over.")
+                print(f"Game over - {self.browser_game_score()}.")
             if self.save_picture:
                 print("Taking a screen shot.")
                 now = dt.now()
                 if not Path("./images/").exists():
                     Path("./images/").mkdir()
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
-                close = self.driver.find_elements(By.CSS_SELECTOR, "button[class*=Modal-module_close]")
-                for e in close:
-                    e.click()
-                time.sleep(2)
+                
+                wait = WebDriverWait(self.driver, 10) # waits up to 10 seconds
+                
+                close_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[class*=Modal-module_close]")))
+                actions = ActionChains(self.driver)
+                actions.move_to_element(close_button).click().perform()
+                close_button.click()
+
+                scroll_fn = f"""
+                    let container = document.querySelector('div[class*=App-module_gameContainer__]');
+                    container.scrollTop = container.scrollIntoView(true);
+                """
+
+                self.driver.execute_script(scroll_fn)
+
+                delete_toast_fn = """
+                    // Use the ^= (starts with) operator to select any element whose ID begins with the stable part.
+                    var element = document.querySelector('[id^="ToastContainer-module_gameToaster__"]');
+
+                    // Check if the element was found before attempting to remove it.
+                    if (element) {
+                        element.remove();
+                    }
+                """
+
+                self.driver.execute_script(delete_toast_fn)
+
+                time.sleep(1)
                 self.gameboard.find_element(By.XPATH, "../..").screenshot(f"./images/{now.year}_{now.month}_{now.day}_{self.browser_game_score()}.png")
+
             if self.print_statements:
                 print("Closing web driver.")
             self.driver.close()
