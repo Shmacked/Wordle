@@ -60,8 +60,6 @@ class Wordle:
             browser_game = True
         if word is None:
             word = "adieu"
-        if starting_guess_word is None:
-            starting_guess_word = "adieu"
         if save_picture is None:
             save_picture = True
         if debug is None:
@@ -73,6 +71,7 @@ class Wordle:
         self.debug = debug
         self.save_picture = save_picture
         self.browser_game = browser_game
+        self.starting_guess_word = None
 
         if self.browser_game:
             if self.print_statements:
@@ -98,7 +97,6 @@ class Wordle:
         else:
             self.WORD = word
 
-        self.starting_guess_word = starting_guess_word
         self.word_delta = word_delta
         self.guesses = 0
         self.history = []
@@ -141,6 +139,11 @@ class Wordle:
         if self.print_statements:
             if self.dictionary is not None:
                 print("Loaded dictionaries.")
+        
+        
+        if starting_guess_word is None:
+            starting_guess_word = self.avg_weighted_word()
+        self.starting_guess_word = starting_guess_word
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.browser_game:
