@@ -1,5 +1,3 @@
-Versions/wordleV1.py
-Versions/wordleV2.py
-Versions/wordleV3.py
-Versions/wordleV4.py
-Versions/wordleV5.py
+Versions/*
+images/*
+.gitignore
